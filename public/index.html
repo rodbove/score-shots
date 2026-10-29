@@ -41,6 +41,9 @@ h1 span { color: var(--yellow); }
 }
 .meta { margin-top: 28px; display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 12px; }
 .meta label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
+.meta .song-field { display: flex; flex-direction: column; gap: 6px; }
+.meta .song-field input { display: none; }
+.meta .song-field.custom input { display: block; }
 .meta select, .meta input {
   background: var(--panel); border: 1px solid var(--line); color: var(--text);
   padding: 10px; border-radius: 8px; font: inherit; width: 100%;
@@ -110,9 +113,8 @@ h2 { font: 28px 'Bebas Neue', sans-serif; letter-spacing: 1px; margin: 48px 0 12
 
   <div class="meta">
     <label>Game<select id="game"></select></label>
-    <label>Song<input id="song" list="songs" placeholder="Through the Fire and Flames" autocomplete="off"></label>
+    <label>Song<span class="song-field" id="songField"><select id="songSelect"></select><input id="songCustom" placeholder="Song name" autocomplete="off"></span></label>
     <label>Difficulty<select id="difficulty"></select></label>
-    <datalist id="songs"></datalist>
   </div>
 
   <div class="drop" id="drop">
@@ -174,23 +176,60 @@ function recall(key) {
   try { return localStorage.getItem(key) || ''; } catch { return ''; }
 }
 
+const OTHER_SONG = '__other__';
+let songsByGame = {};
+
+function songGroup(label, songs) {
+  const group = document.createElement('optgroup');
+  group.label = label;
+  group.append(...songs.map((s) => new Option(`${s.song} - ${s.artist}`, s.song)));
+  return group;
+}
+
+function fillSongs() {
+  const { disc = [], dlc = [] } = songsByGame[$('game').value] ?? {};
+  const select = $('songSelect');
+  const options = [new Option('Pick a song', '')];
+  if (disc.length) options.push(songGroup('On disc', disc));
+  if (dlc.length) options.push(songGroup($('game').value === 'Guitar Hero Live' ? 'GHTV' : 'DLC', dlc));
+  options.push(new Option('Other (type it)', OTHER_SONG));
+  select.replaceChildren(...options);
+  select.value = disc.length || dlc.length ? '' : OTHER_SONG;
+  toggleCustomSong();
+}
+
+function toggleCustomSong() {
+  $('songField').classList.toggle('custom', $('songSelect').value === OTHER_SONG);
+}
+
+function selectedSong() {
+  const value = $('songSelect').value;
+  return value === OTHER_SONG ? $('songCustom').value.trim() : value;
+}
+
 async function loadOptions() {
   const res = await fetch('/api/games');
   const { games, difficulties } = await res.json();
-  $('game').replaceChildren(...games.map((g) => new Option(g, g)));
+  songsByGame = Object.fromEntries(games.map((g) => [g.name, g]));
+  $('game').replaceChildren(...games.map((g) => new Option(g.name, g.name)));
   $('difficulty').replaceChildren(...difficulties.map((d) => new Option(d, d)));
   $('game').value = recall('game') || 'Guitar Hero III: Legends of Rock';
   $('difficulty').value = recall('difficulty') || 'Expert';
-  $('game').onchange = () => remember('game', $('game').value);
+  $('game').onchange = () => {
+    remember('game', $('game').value);
+    fillSongs();
+  };
   $('difficulty').onchange = () => remember('difficulty', $('difficulty').value);
+  $('songSelect').onchange = toggleCustomSong;
+  fillSongs();
 }
 
 async function upload(file) {
   if (!keyInput.value) return setStatus('Enter upload key first.', true);
-  const song = $('song').value.trim();
+  const song = selectedSong();
   if (!song) {
-    $('song').focus();
-    return setStatus('Enter song name first.', true);
+    ($('songSelect').value === OTHER_SONG ? $('songCustom') : $('songSelect')).focus();
+    return setStatus('Pick a song first.', true);
   }
   const params = new URLSearchParams({ game: $('game').value, song, difficulty: $('difficulty').value });
   setStatus(`Uploading ${file.name || 'image'}...`);
@@ -203,7 +242,6 @@ async function upload(file) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return setStatus(data.error || `Upload failed (${res.status})`, true);
   setStatus(`Done. ${data.song} (${data.difficulty}), ${data.width}x${data.height}.`);
-  $('song').value = '';
   $('resultImg').src = data.url;
   $('resultLink').value = data.url;
   $('result').classList.add('show');
@@ -238,8 +276,6 @@ async function loadGrid() {
     grid.innerHTML = '<p class="empty">No scores yet.</p>';
     return;
   }
-  const songs = [...new Set(items.map((i) => i.song).filter(Boolean))];
-  $('songs').replaceChildren(...songs.map((s) => new Option(s)));
   for (const item of items) {
     const card = document.createElement('div');
     card.className = 'card';
