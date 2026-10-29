@@ -1,0 +1,14 @@
+{
+  "name": "score-shots",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "./scripts/build.sh"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.2"
+  }
+}

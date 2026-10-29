@@ -1,0 +1,11 @@
+{
+  "framework": null,
+  "buildCommand": "./scripts/build.sh",
+  "outputDirectory": "public",
+  "functions": {
+    "api/*.js": { "includeFiles": "lib/**" }
+  },
+  "rewrites": [
+    { "source": "/i/:file", "destination": "https://ffglknttghevublpgtjs.supabase.co/storage/v1/object/public/gh-scores/:file" }
+  ]
+}
