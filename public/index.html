@@ -39,8 +39,14 @@ h1 span { color: var(--yellow); }
   background: var(--panel); border: 1px solid var(--line); color: var(--text);
   padding: 8px 10px; border-radius: 8px; font: inherit; width: 200px;
 }
+.meta { margin-top: 28px; display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 12px; }
+.meta label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
+.meta select, .meta input {
+  background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  padding: 10px; border-radius: 8px; font: inherit; width: 100%;
+}
 .drop {
-  margin-top: 28px; border: 2px dashed var(--line); border-radius: 16px;
+  margin-top: 16px; border: 2px dashed var(--line); border-radius: 16px;
   padding: 48px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
   background: var(--panel);
 }
@@ -71,6 +77,10 @@ h2 { font: 28px 'Bebas Neue', sans-serif; letter-spacing: 1px; margin: 48px 0 12
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .card a { display: block; aspect-ratio: 16 / 10; background: #000; }
 .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .info { padding: 10px 10px 0; }
+.card .song { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .sub { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.card .diff { color: #04130a; background: var(--yellow); border-radius: 4px; padding: 0 6px; font-weight: 700; }
 .card .row { display: flex; gap: 6px; padding: 8px; }
 .card .row button { flex: 1; padding: 6px; font-size: 13px; }
 .empty { color: var(--muted); }
@@ -79,6 +89,7 @@ h2 { font: 28px 'Bebas Neue', sans-serif; letter-spacing: 1px; margin: 48px 0 12
 @media (max-width: 560px) {
   h1 { font-size: 48px; }
   .key, .key input { width: 100%; }
+  .meta { grid-template-columns: 1fr; }
   .result { flex-wrap: wrap; }
 }
 </style>
@@ -96,6 +107,13 @@ h2 { font: 28px 'Bebas Neue', sans-serif; letter-spacing: 1px; margin: 48px 0 12
       <input id="key" type="password" placeholder="Upload key" autocomplete="off">
     </label>
   </header>
+
+  <div class="meta">
+    <label>Game<select id="game"></select></label>
+    <label>Song<input id="song" list="songs" placeholder="Through the Fire and Flames" autocomplete="off"></label>
+    <label>Difficulty<select id="difficulty"></select></label>
+    <datalist id="songs"></datalist>
+  </div>
 
   <div class="drop" id="drop">
     <strong>Drop score screenshot</strong>
@@ -146,18 +164,46 @@ async function shrink(file) {
   }
 }
 
+const DIFF_COLORS = { Easy: 'var(--green)', Medium: 'var(--yellow)', Hard: 'var(--orange)', Expert: 'var(--red)' };
+
+function remember(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
+function recall(key) {
+  try { return localStorage.getItem(key) || ''; } catch { return ''; }
+}
+
+async function loadOptions() {
+  const res = await fetch('/api/games');
+  const { games, difficulties } = await res.json();
+  $('game').replaceChildren(...games.map((g) => new Option(g, g)));
+  $('difficulty').replaceChildren(...difficulties.map((d) => new Option(d, d)));
+  $('game').value = recall('game') || 'Guitar Hero III: Legends of Rock';
+  $('difficulty').value = recall('difficulty') || 'Expert';
+  $('game').onchange = () => remember('game', $('game').value);
+  $('difficulty').onchange = () => remember('difficulty', $('difficulty').value);
+}
+
 async function upload(file) {
   if (!keyInput.value) return setStatus('Enter upload key first.', true);
+  const song = $('song').value.trim();
+  if (!song) {
+    $('song').focus();
+    return setStatus('Enter song name first.', true);
+  }
+  const params = new URLSearchParams({ game: $('game').value, song, difficulty: $('difficulty').value });
   setStatus(`Uploading ${file.name || 'image'}...`);
   const body = await shrink(file);
-  const res = await fetch('/api/upload', {
+  const res = await fetch(`/api/upload?${params}`, {
     method: 'POST',
     headers: { 'x-upload-key': keyInput.value, 'Content-Type': 'application/octet-stream' },
     body,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return setStatus(data.error || `Upload failed (${res.status})`, true);
-  setStatus(`Done. ${data.width}x${data.height}`);
+  setStatus(`Done. ${data.song} (${data.difficulty}), ${data.width}x${data.height}.`);
+  $('song').value = '';
   $('resultImg').src = data.url;
   $('resultLink').value = data.url;
   $('result').classList.add('show');
@@ -192,13 +238,23 @@ async function loadGrid() {
     grid.innerHTML = '<p class="empty">No scores yet.</p>';
     return;
   }
+  const songs = [...new Set(items.map((i) => i.song).filter(Boolean))];
+  $('songs').replaceChildren(...songs.map((s) => new Option(s)));
   for (const item of items) {
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `<a target="_blank" rel="noopener"><img loading="lazy" alt=""></a>
+      <div class="info"><div class="song"></div><div class="sub"><span class="diff"></span><span class="game"></span></div></div>
       <div class="row"><button class="ghost" data-act="copy">Copy link</button><button class="danger" data-act="del">Delete</button></div>`;
     card.querySelector('a').href = item.url;
     card.querySelector('img').src = item.url;
+    card.querySelector('.song').textContent = item.song || 'Untitled';
+    card.querySelector('.game').textContent = item.game || '';
+    const diff = card.querySelector('.diff');
+    if (item.difficulty) {
+      diff.textContent = item.difficulty;
+      diff.style.background = DIFF_COLORS[item.difficulty];
+    } else diff.remove();
     card.querySelector('[data-act=copy]').onclick = () => {
       navigator.clipboard?.writeText(item.url);
       setStatus(`Copied ${item.url}`);
@@ -217,6 +273,7 @@ drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); upload
 document.addEventListener('paste', (e) => uploadAll([...e.clipboardData.files]));
 $('copyResult').onclick = () => copy($('resultLink').value);
 
+loadOptions();
 loadGrid();
 </script>
 </body>
