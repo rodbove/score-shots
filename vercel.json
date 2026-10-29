@@ -6,6 +6,6 @@
     "api/*.js": { "includeFiles": "lib/**" }
   },
   "rewrites": [
-    { "source": "/i/:file", "destination": "https://ffglknttghevublpgtjs.supabase.co/storage/v1/object/public/gh-scores/:file" }
+    { "source": "/i/:file", "destination": "https://1rg5adnlsup5ejtx.public.blob.vercel-storage.com/gh-scores/:file" }
   ]
 }
